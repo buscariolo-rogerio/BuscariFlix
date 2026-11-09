@@ -1,0 +1,73 @@
+name: CI/CD BuscariFlix
+
+on:
+  push:
+    # Toda branch executa a CI; somente a main pode executar o job de deploy.
+    branches: ["**"]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    name: Validar e preparar site
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validar HTML e arquivos locais
+        run: python tests/validate_site.py
+
+      - name: Preparar artefato do site
+        run: |
+          mkdir -p dist
+          cp *.html *.css *.js *.jpg *.png *.webp dist/
+
+      - name: Salvar artefato validado
+        uses: actions/upload-artifact@v4
+        with:
+          name: site-build
+          path: dist
+          if-no-files-found: error
+
+  deploy:
+    name: Publicar no GitHub Pages
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: ci
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    concurrency:
+      group: pages
+      cancel-in-progress: true
+    steps:
+      - name: Recuperar site aprovado pela CI
+        uses: actions/download-artifact@v4
+        with:
+          name: site-build
+          path: dist
+
+      - name: Configurar GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Criar artefato de publicação
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+      - name: Fazer deployment
+        id: deployment
+        uses: actions/deploy-pages@v4
